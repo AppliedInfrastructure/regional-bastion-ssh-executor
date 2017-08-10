@@ -1,0 +1,123 @@
+#!/bin/bash
+# Name: bastion_ssh
+# Description: Rundeck NodeExecutor plugin supporting SSH commands via an
+#              optional bastion (jump) host.  A variety of bastion host
+#              scenarios are supported:
+#
+#              1. No bastion host (direct SSH)
+#              2. Static/global bastion (single region, multi-region, etc.)
+#              3. Dynamic bastion using REGION (multi-region, multi-cloud, etc.)
+# 
+#              To support dynamic bastion hostnames, hosts must include a
+#              Rundeck tag equal to the name of a supported cloud region.  In 
+#              AWS, for example, this may be "us-west-1", "eu-central-1", etc.
+#
+#              The region name may then be included in the bastion hostname
+#              pattern:
+#
+#              * For a host with a tag: "eu-central-1"
+#              * A bastion hostname pattern: "${REGION}-bastion.example.net"
+#              * Might expand to: "eu-central-1-bastion.example.net"
+# Configurables:
+#     NODE - ssh-keyfile: SSH key file for this node.  Overrides 'ssh-key-storage-path'.
+#     NODE - ssh-port: SSH port to use for this node.  Defaults to 22.
+#     NODE - ssh-opts: Custom options to pass to the SSH command.
+#     CONFIG - ssh-key-storage-path: Rundeck key path for node authentication.
+#     CONFIG - ssh-use-bastion-host: Use SSH via a configured bastion host.
+#     CONFIG - ssh-bastion-username: User name to use for bastion host authentication.
+#     CONFIG - ssh-bastion-key-storage-path: Rundeck key path for bastion authentication.
+#     CONFIG - ssh-bastion-hostname-pattern: Hostname, IP, or pattern to use for the bastion host.
+#     CONFIG - ssh-use-test-mode: Print SSH commands without executing them.
+#
+#
+# Copyright 2017 Applied Infrastructure, LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+    # Commands
+    SSH=/usr/bin/ssh
+    EXPR=/usr/bin/expr
+    GREP=/bin/grep
+    MKTEMP=/bin/mktemp
+    SED=/bin/sed
+    TR=/usr/bin/tr
+
+    # Arguments
+    TAGS="${1}"
+    USER="${2}"
+    HOST="${3}"
+    shift 3
+
+    CMD=$*
+
+    # Look for region tag in the supplied host tags
+    REGION=$( ${GREP} -Eiof ${RD_PLUGIN_BASE}/region_list <<< ${TAGS,,} )
+    if [ -z "${REGION}" ]; then
+        REGION="default"
+    fi
+    echo "Region is ${REGION}"
+
+    # Use host SSH port, Rundeck-supplied port, or default?
+    PORT=${RD_NODE_SSH_PORT:-22}
+    HOSTPART=$( ${EXPR} "${HOST}" : '\(.*\):' )
+    if [ ! -z "${HOSTPART}" ] ; then
+        PORT=${HOST#"$HOSTPART:"}
+        HOST=${HOSTPART}
+    fi
+
+    # Base SSH options
+    OPTS="-tt -q -p ${PORT} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o LogLevel=quiet"
+
+    # Authentication
+    if [[ -n "${RD_NODE_SSH_KEYFILE:-}" ]]; then
+        # Use node-level key file attribute
+        OPTS="${OPTS} -i ${RD_NODE_SSH_KEYFILE}"
+    elif [[ -n "${RD_CONFIG_SSH_KEY_STORAGE_PATH:-}" ]]; then
+        # Use Rundeck key store location
+        SSH_KEY_STORAGE_PATH=$( ${MKTEMP} )
+        echo "${RD_CONFIG_SSH_KEY_STORAGE_PATH}" > "${SSH_KEY_STORAGE_PATH}"
+        OPTS="${OPTS} -i ${SSH_KEY_STORAGE_PATH}"
+    fi
+
+    # Add node-level SSH options
+    if [[ ! -z "${RD_NODE_SSH_OPTS}" ]] ; then
+        OPTS="${OPTS} ${RD_NODE_SSH_OPTS}"
+    fi
+
+    # If dry-run mode, print command and exit.  Otherwise, run the command.
+    [ "${RD_CONFIG_SSH_USE_TEST_MODE}" == "true" ] && EXEC=echo || EXEC=exec
+
+    # Execute command with/without bastion host, based on configuration.
+    if [ "${RD_CONFIG_SSH_USE_BASTION_HOST}" == "true" ]; then
+        BASTION_USERNAME=${RD_CONFIG_SSH_BASTION_USERNAME}
+        BASTION_HOSTNAME=$( eval echo ${RD_CONFIG_SSH_BASTION_HOSTNAME_PATTERN} | ${TR} -d '[:cntrl:]' )
+        BASTION_HOSTPORT=${RD_CONFIG_SSH_BASTION_HOST_PORT}
+        BASTION_KEY_STORAGE_PATH=$( ${MKTEMP} )
+        echo "${RD_CONFIG_SSH_BASTION_KEY_STORAGE_PATH}" > "${BASTION_KEY_STORAGE_PATH}"
+
+        ${EXEC} ${SSH} ${OPTS} -o ProxyCommand="${SSH} -tt -q -p ${BASTION_HOSTPORT} -i ${BASTION_KEY_STORAGE_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -W %h:%p ${BASTION_USERNAME}@${BASTION_HOSTNAME}" ${USER}@${HOST} -- ${CMD} 2>&1 | /bin/sed '/^tcgetattr/ d'
+        RC=${PIPESTATUS[0]}
+
+        rm -f "${SSH_KEY_STORAGE_PATH}"
+        rm -f "${BASTION_KEY_STORAGE_PATH}"
+        exit ${RC}
+    else
+        ${EXEC} ${SSH} ${OPTS} ${USER}@${HOST} -- ${CMD} 2>&1 | /bin/sed '/^tcgetattr/ d' 
+        RC=${PIPESTATUS[0]}
+
+        rm -f "${SSH_KEY_STORAGE_PATH}"
+        rm -f "${BASTION_KEY_STORAGE_PATH}"
+        exit ${RC}
+    fi
+
+    exit 0

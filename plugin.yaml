@@ -1,0 +1,86 @@
+name: regional-bastion-ssh-executor
+version: 0.1
+rundeckPluginVersion: 1.1
+author: Michael Laws
+date: RELEASE_DATE
+url: https://github.com/AppliedInfrastructure/regional-bastion-ssh-executor
+providers:
+  - name: regional-bastion-ssh
+    service: NodeExecutor
+    title: Regional Bastion SSH
+    description: Executes an SSH command via an optional bastion (jump) host.
+    plugin-type: script
+    script-interpreter: /bin/bash
+    script-file: bastion_ssh
+    script-args: ${node.tags} ${node.username} ${node.hostname} ${exec.command}
+    config:
+      - name: SSH_KEY_STORAGE_PATH
+        title: SSH Key Storage Path
+        description: "Optional storage path for SSH key file.  An 'ssh-key-storage-path' node attribute will override this value."
+        type: String
+        required: false
+        scope: Instance
+        renderingOptions:
+          selectionAccessor: "STORAGE_PATH"
+          valueConversion: "STORAGE_PATH_AUTOMATIC_READ"
+          storage-path-root: "keys"
+          instance-scope-node-attribute: "ssh-key-storage-path"
+      - name: SSH_USE_BASTION_HOST
+        title: Use Bastion Host
+        description: "Enable use of a bastion (jump) host.  An 'ssh-use-bastion-host' node attribute will override this value."
+        type: Boolean
+        required: true
+        scope: Instance
+        values: true,false
+        default: false
+        renderingOptions:
+          instance-scope-node-attribute: "ssh-use-bastion-host"
+      - name: SSH_USE_TEST_MODE
+        title: Test Mode
+        description: "Operate in test mode.  Print SSH commands without executing them."
+        type: Boolean
+        required: true
+        scope: Instance
+        values: true,false
+        default: false
+      - name: SSH_BASTION_USERNAME
+        title: SSH Username
+        description: "Optional bastion host login (defaults to centos).  An 'ssh-bastion-username' node attribute overrides this value."
+        type: String
+        required: true
+        default: centos
+        scope: Instance
+        renderingOptions:
+          instance-scope-node-attribute: "ssh-bastion-username"
+          groupName: Bastion Host Configuration
+      - name: SSH_BASTION_KEY_STORAGE_PATH
+        title: SSH Key Storage Path
+        description: "Optional storage path for bastion SSH key file.  An 'ssh-bastion-key-storage-path' node attribute overrides this value."
+        type: String
+        required: false
+        scope: Instance
+        renderingOptions:
+          selectionAccessor: "STORAGE_PATH"
+          valueConversion: "STORAGE_PATH_AUTOMATIC_READ"
+          storage-path-root: "keys"
+          instance-scope-node-attribute: "ssh-bastion-key-storage-path"
+          groupName: Bastion Host Configuration
+      - name: SSH_BASTION_HOSTNAME_PATTERN
+        title: Hostname Pattern
+        description: "A static bastion host IP, hostname, or a dynamic hostname pattern using the ${REGION} variable (e.g. ${REGION}-bastion.example.com).  An 'ssh-bastion-hostname-pattern' node attribute overrides this value."
+        type: String
+        required: false
+        scope: Instance
+        renderingOptions:
+          groupName: Bastion Host Configuration
+          instance-scope-node-attribute: "ssh-bastion-hostname-pattern"
+      - name: SSH_BASTION_HOST_PORT
+        title: SSH Port
+        description: "A static bastion host SSH port number.  An 'ssh-bastion-host-port' node attribute overrides this value."
+        type: Integer
+        required: true
+        default: 22
+        scope: Instance
+        renderingOptions:
+          groupName: Bastion Host Configuration
+          instance-scope-node-attribute: "ssh-bastion-host-port"
