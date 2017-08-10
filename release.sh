@@ -28,7 +28,7 @@
     ${MKDIR} -p ${RELEASE_DIR}/${PLUGIN_NAME}
     ${SED} "s/RELEASE_DATE/${RELEASE_DATE}/" ${YAML_FILE} > ${RELEASE_DIR}/${PLUGIN_NAME}/${YAML_FILE}
     ${CP} -a ${CONTENT_DIR} ${RELEASE_DIR}/${PLUGIN_NAME}
-    ${ZIP} -r ${PLUGIN_NAME}.zip ${RELEASE_DIR}/${PLUGIN_NAME}
+    ( cd ${RELEASE_DIR} && ${ZIP} -r - ${PLUGIN_NAME} ) > ${PLUGIN_NAME}.zip 
 
     # Cleanup
     rm -rf ${RELEASE_DIR}
